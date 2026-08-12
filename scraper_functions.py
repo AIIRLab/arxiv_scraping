@@ -395,9 +395,9 @@ def process_paper(
     return True
  
  
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Batch scraping
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
  
 def scrape_month(
     year: str,
@@ -447,7 +447,7 @@ def scrape_month(
     log.info("Done. Processed %d paper(s) for %s/%s.", processed, year, month)
 
 
-def scrape_range(
+def scrape_range( 
     years: list[str],
     months: list[str],
     output_dir: Optional[Path] = None,

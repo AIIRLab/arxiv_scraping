@@ -34,7 +34,7 @@ found = scraper_functions.process_paper(
 )
  
 if not found:
-    print("Paper not found (404) or all retries failed — check the year/month/number.")
+    print("Paper not found (404) or all retries failed check the year/month/number.")
 else:
     full_id = f"{args.year}{args.month}.{args.paper_number}"
     json_path = Path.cwd() / f"{full_id}.json"
@@ -48,7 +48,7 @@ else:
         with open(json_path, encoding="utf-8") as f:
             data = json.load(f)
             
-        print(f"\n📊 Paper Summary:")
+        print(f"\n📊 Paper Summary:") 
         print(f"   Title: {data['title'][:100]}...")
         print(f"   Categories: {', '.join(data['categories'])}")
         print(f"   📝 {data['metadata']['num_paragraphs']} paragraphs")

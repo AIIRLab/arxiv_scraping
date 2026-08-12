@@ -29,7 +29,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-print(f"📚 Scraping ALL papers from {args.year}/{args.month}...")
+print(f"📚 Scraping ALL papers from the date{args.year}/{args.month}...")
 print(f"   Starting at paper {args.start_id:05d}")
 if args.max_papers:
     print(f"   Max papers: {args.max_papers}")
