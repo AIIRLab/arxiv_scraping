@@ -24,7 +24,8 @@ log = logging.getLogger("two_agent_gemma_pipeline")
 
 csv.field_size_limit(sys.maxsize)
 
-gemma_model = "google/gemma-4-E2B-it"
+gemma_model = "google/gemma-2-9b-it"
+
 # ---------------------------------------------------------------------------
 # Prompts
 # ---------------------------------------------------------------------------
@@ -101,20 +102,16 @@ def _generate(
 ) -> str:
     """
     Runs a single-turn chat completion with the local Gemma model.
-    Returns the raw decoded string of newly generated tokens.
     """
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
-
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    # Simple concatenation for Gemma
+    full_prompt = f"{system_prompt}\n\n{user_message}\n\nResponse:"
+    
+    inputs = tokenizer(full_prompt, return_tensors="pt")
+    
+    # Move inputs to the same device as model
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    
     input_len = inputs["input_ids"].shape[-1]
 
     with torch.no_grad():
@@ -122,6 +119,10 @@ def _generate(
             **inputs,
             max_new_tokens=max_new_tokens,
             pad_token_id=tokenizer.eos_token_id,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+            eos_token_id=tokenizer.eos_token_id,
         )
 
     generated_tokens = outputs[0][input_len:]
@@ -134,7 +135,6 @@ def _generate(
 
     raw = tokenizer.decode(generated_tokens, skip_special_tokens=True)
     return raw.strip()
-
 
 class JSONParseError(ValueError):
     """
@@ -311,11 +311,13 @@ def load_models(
     load_in_4bit: bool = False,
 ) -> tuple[AutoTokenizer, AutoModelForCausalLM]:
     """
-    Loads the local Gemma tokenizer and model. A single model handles both
-    agents (Agent 1 and Agent 2 are just two different system prompts run
-    against the same weights).
+    Loads the local Gemma tokenizer and model.
     """
     log.info("Loading model %s ...", model_name)
+
+    # Set device explicitly
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    log.info(f"Using device: {device}")
 
     quant_kwargs = {}
     if load_in_4bit:
@@ -326,14 +328,18 @@ def load_models(
         )
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    
+    # Load model without device_map
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        device_map="auto",
         torch_dtype=torch.bfloat16,
         **quant_kwargs,
     )
+    
+    # Move to device explicitly
+    model = model.to(device)
     model.eval()
-    log.info("Model loaded.")
+    log.info("Model loaded on %s.", device)
 
     return tokenizer, model
 
