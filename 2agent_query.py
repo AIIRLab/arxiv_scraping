@@ -350,30 +350,78 @@ def load_models(
 
 def load_input_rows(input_path: str) -> list[dict]:
     """
-    Reads a single paper JSON file and yields each paragraph separately 
-    as an input row containing the paragraph_id and paragraph_text.
+    Reads either a single paper JSON file or all JSON files in a directory
+    and yields each paragraph separately as an input row.
     """
     rows = []
-    with open(input_path, "r", encoding="utf-8") as infile:
-        data = json.load(infile)
+    
+    # Check if input_path is a directory or a file
+    if os.path.isdir(input_path):
+        # It's a directory - read all .json files
+        log.info(f"Reading all JSON files from directory: {input_path}")
+        json_files = [f for f in os.listdir(input_path) if f.endswith('.json')]
         
-        # Extract the paragraphs dictionary safely
-        paragraphs_dict = data.get("paragraphs", {})
-        
-        # Iterate over the paragraph IDs and their respective texts
-        for paragraph_id, paragraph_text in paragraphs_dict.items():
-            pid = str(paragraph_id or "").strip()
-            text = str(paragraph_text or "").strip()
-            
-            # Skip rows if either the ID or the text content is empty
-            if not pid or not text:
-                continue
+        for filename in sorted(json_files):
+            filepath = os.path.join(input_path, filename)
+            try:
+                with open(filepath, "r", encoding="utf-8") as infile:
+                    data = json.load(infile)
+                    
+                    # Check if this is a paragraph file (has 'content' field)
+                    if "content" in data:
+                        # This is a paragraph file from your scraper
+                        paper_id = data.get("paper_id", filename.replace('.json', ''))
+                        paragraph_id = data.get("paragraph_id", "1")
+                        content = data.get("content", "")
+                        
+                        if content:
+                            # Create a unique ID combining paper_id and paragraph_id
+                            unique_id = f"{paper_id}_{paragraph_id:04d}"
+                            rows.append({
+                                "paragraph_id": unique_id,
+                                "paragraph_text": content,
+                                "source_file": filename
+                            })
+                    elif "paragraphs" in data:
+                        # This is a combined file with multiple paragraphs
+                        paragraphs_dict = data.get("paragraphs", {})
+                        for pid, text in paragraphs_dict.items():
+                            if text:
+                                rows.append({
+                                    "paragraph_id": f"{filename}_{pid}",
+                                    "paragraph_text": text,
+                                    "source_file": filename
+                                })
+                    else:
+                        log.warning(f"Skipping {filename}: Unknown format")
+                        
+            except Exception as e:
+                log.warning(f"Error reading {filename}: {e}")
                 
-            rows.append({
-                "paragraph_id": pid, 
-                "paragraph_text": text
-            })
+    else:
+        # It's a single file - use the original logic
+        log.info(f"Reading single file: {input_path}")
+        with open(input_path, "r", encoding="utf-8") as infile:
+            data = json.load(infile)
             
+            # Extract the paragraphs dictionary safely
+            paragraphs_dict = data.get("paragraphs", {})
+            
+            # Iterate over the paragraph IDs and their respective texts
+            for paragraph_id, paragraph_text in paragraphs_dict.items():
+                pid = str(paragraph_id or "").strip()
+                text = str(paragraph_text or "").strip()
+                
+                # Skip rows if either the ID or the text content is empty
+                if not pid or not text:
+                    continue
+                    
+                rows.append({
+                    "paragraph_id": pid, 
+                    "paragraph_text": text
+                })
+    
+    log.info(f"Loaded {len(rows)} paragraphs from {input_path}")
     return rows
 
 # ---------------------------------------------------------------------------
@@ -583,10 +631,6 @@ def run_single_paragraph_test(paragraph: str | None = None, model_name: str = ge
 
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser(
         description="Two-agent query-generation pipeline — stops once N verified questions are produced."
@@ -602,7 +646,7 @@ def main():
             "built-in default paragraph is used."
         ),
     )
-    parser.add_argument("--input", default="papers.json", help="Path to the input paper JSON file.")
+    parser.add_argument("--input", default="2508/json/", help="Path to the input paper JSON file or directory containing JSON files.")
     parser.add_argument("--output", default="gemma_verified.json", help="Path to write accepted rows to.")
     parser.add_argument("--rejects", default="gemma_rejected.json", help="Path to log rejected/failed rows to.")
     parser.add_argument("--checkpoint", default="gemma_checkpoint.json", help="Path to the resume checkpoint file.")
@@ -618,6 +662,11 @@ def main():
         "--no_resume",
         action="store_true",
         help="Ignore any existing checkpoint/output files and start completely fresh (overwrites output).",
+    )
+    parser.add_argument(
+        "--file_pattern",
+        default="*.json",
+        help="File pattern to match when reading from directory (default: *.json)",
     )
     args = parser.parse_args()
 
